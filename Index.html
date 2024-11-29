@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <title>Pemantau Data KPU</title>
+    <style>
+        .suggestion-item:hover {
+            background-color: #f3f4f6;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <div class="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6">
+            <h1 class="text-2xl font-bold mb-6 text-gray-800">Data Pemilihan KPU</h1>
+            
+            <!-- Pencarian -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium mb-2 text-gray-700">Cari Paslon</label>
+                <div class="relative">
+                    <input type="text" id="searchInput" 
+                           class="w-full p-2 border rounded-md bg-white pr-10" 
+                           placeholder="Ketik nama paslon...">
+                    <div id="searchSuggestions" 
+                         class="absolute z-10 w-full bg-white mt-1 rounded-md shadow-lg hidden">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Dropdown Provinsi -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2 text-gray-700">Pilih Provinsi</label>
+                <select id="provinsi" class="w-full p-2 border rounded-md bg-white">
+                    <option value="">Pilih Provinsi</option>
+                </select>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="hidden">
+                <div class="flex items-center justify-center p-4">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+            </div>
+
+            <!-- Hasil Pemilihan -->
+            <div id="hasilPemilihan" class="mt-8" style="display: none;">
+                <div id="dataPaslon" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"></div>
+                <div id="dataPerolehanSuara" class="space-y-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let paslonGlobalData = null;
+        
+        $(document).ready(function() {
+            loadProvinsi();
+            loadPaslonData();
+
+            $('#provinsi').change(function() {
+                const kodeProvinsi = $(this).val();
+                if (kodeProvinsi) {
+                    showLoading();
+                    loadDataPaslon(kodeProvinsi);
+                    updateHasilPemilihan(kodeProvinsi);
+                } else {
+                    resetSelections();
+                }
+            });
+
+            // Pencarian
+            $('#searchInput').on('input', function() {
+                const searchTerm = $(this).val().toLowerCase();
+                if (searchTerm.length < 2) {
+                    $('#searchSuggestions').hide();
+                    return;
+                }
+
+                const suggestions = [];
+                Object.entries(paslonGlobalData).forEach(([kode, paslonList]) => {
+                    Object.entries(paslonList).forEach(([paslonId, paslon]) => {
+                        if (paslon.nama.toLowerCase().includes(searchTerm)) {
+                            suggestions.push({
+                                kode: kode,
+                                paslonId: paslonId,
+                                nama: paslon.nama
+                            });
+                        }
+                    });
+                });
+
+                displaySuggestions(suggestions);
+            });
+        });
+
+        function displaySuggestions(suggestions) {
+            const container = $('#searchSuggestions');
+            container.empty();
+
+            if (suggestions.length === 0) {
+                container.html('<div class="p-2 text-gray-500">Tidak ada hasil</div>');
+            } else {
+                suggestions.forEach(suggestion => {
+                    container.append(`
+                        <div class="suggestion-item p-2 border-b last:border-b-0" 
+                             data-kode="${suggestion.kode}">
+                            ${suggestion.nama}
+                        </div>
+                    `);
+                });
+            }
+
+            container.show();
+
+            // Event handler untuk item suggestion
+            $('.suggestion-item').click(function() {
+                const kodeProvinsi = $(this).data('kode');
+                $('#provinsi').val(kodeProvinsi).trigger('change');
+                $('#searchInput').val('');
+                $('#searchSuggestions').hide();
+            });
+        }
+
+        function showLoading() {
+            $('#loadingIndicator').removeClass('hidden');
+        }
+
+        function hideLoading() {
+            $('#loadingIndicator').addClass('hidden');
+        }
+
+        function resetSelections() {
+            $('#hasilPemilihan').hide();
+            $('#dataPaslon, #dataPerolehanSuara').empty();
+        }
+
+        function loadPaslonData() {
+            google.script.run
+                .withSuccessHandler(function(data) {
+                    paslonGlobalData = data;
+                })
+                .getDataPaslon();
+        }
+
+        function loadProvinsi() {
+            showLoading();
+            google.script.run
+                .withSuccessHandler(function(data) {
+                    const select = $('#provinsi');
+                    data.forEach(function(item) {
+                        select.append(`<option value="${item.kode}">${item.nama}</option>`);
+                    });
+                    hideLoading();
+                })
+                .withFailureHandler(function(error) {
+                    console.error('Error:', error);
+                    hideLoading();
+                })
+                .getProvinsi();
+        }
+
+        function loadDataPaslon(kodeProvinsi) {
+            google.script.run
+                .withSuccessHandler(function(data) {
+                    const container = $('#dataPaslon');
+                    container.empty();
+                    
+                    if (data[kodeProvinsi]) {
+                        Object.entries(data[kodeProvinsi]).forEach(([key, paslon]) => {
+                            container.append(`
+                                <div class="p-4 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md" 
+                                    style="background-color: ${paslon.warna}15; border-left: 4px solid ${paslon.warna}">
+                                    <div class="font-semibold text-lg">Nomor Urut ${paslon.nomor_urut}</div>
+                                    <div class="text-gray-700">${paslon.nama}</div>
+                                </div>
+                            `);
+                        });
+                    }
+                    
+                    $('#hasilPemilihan').show();
+                    hideLoading();
+                })
+                .withFailureHandler(function(error) {
+                    console.error('Error:', error);
+                    hideLoading();
+                })
+                .getDataPaslon();
+        }
+
+        function updateHasilPemilihan(kodeProvinsi) {
+            google.script.run
+                .withSuccessHandler(function(data) {
+                    const container = $('#dataPerolehanSuara');
+                    let htmlContent = '';
+                    
+                    if (data.tungsura && data.tungsura.chart) {
+                        const chart = data.tungsura.chart;
+                        const progress = chart.progres;
+                        
+                        htmlContent += `
+                            <div class="mb-8">
+                                <h3 class="text-xl font-semibold mb-4 text-gray-800">Hasil Perolehan Suara</h3>
+                                <div class="bg-white p-4 rounded-lg shadow">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div class="font-medium text-gray-700">
+                                            Progress: ${progress.persen}% (${progress.progres} dari ${progress.total})
+                                        </div>
+                                        <div class="text-amber-600 flex items-center">
+                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                            </svg>
+                                            <span class="text-sm">Data masih dapat berubah</span>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-4">`;
+                        
+                        google.script.run.withSuccessHandler(function(paslonData) {
+                            const totalSuara = Object.entries(chart)
+                                .filter(([key]) => key !== 'progres')
+                                .reduce((sum, [, value]) => sum + value, 0);
+
+                            Object.entries(chart).forEach(([key, value]) => {
+                                if (key !== 'progres' && paslonData[kodeProvinsi]?.[key]) {
+                                    const paslon = paslonData[kodeProvinsi][key];
+                                    const persentase = ((value / totalSuara) * 100).toFixed(2);
+                                    
+                                    htmlContent += `
+                                        <div class="border-l-4 p-4 bg-gray-50" style="border-color: ${paslon.warna}">
+                                            <div class="flex justify-between mb-2">
+                                                <span class="font-medium text-gray-800">${paslon.nama}</span>
+                                                <span class="font-bold text-gray-900">
+                                                    ${value.toLocaleString()} (${persentase}%)
+                                                </span>
+                                            </div>
+                                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                                <div class="h-2.5 rounded-full transition-all duration-500" 
+                                                    style="width: ${persentase}%; background-color: ${paslon.warna}">
+                                                </div>
+                                            </div>
+                                        </div>`;
+                                }
+                            });
+                            
+                            container.html(htmlContent);
+                            hideLoading();
+                        }).getDataPaslon();
+                    }
+                })
+                .withFailureHandler(function(error) {
+                    console.error('Error:', error);
+                    hideLoading();
+                })
+                .getHasilPemilihan(kodeProvinsi);
+        }
+
+        // Menutup suggestions saat klik di luar
+        $(document).click(function(event) {
+            if (!$(event.target).closest('#searchInput, #searchSuggestions').length) {
+                $('#searchSuggestions').hide();
+            }
+        });
+    </script>
+</body>
+</html>
